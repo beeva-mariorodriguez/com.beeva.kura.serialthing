@@ -6,7 +6,7 @@ _not working!_
 
 ## instructions
 
-1. install eclipse neon using Oomph installer, tried with two eclipse packages
+1. install eclipse neon using Oomph installer, tested with two eclipse packages
   * Eclipse IDE for Java EE Developers
   * Eclipse IDE for Eclipse Committers
   * instructions for both [here](https://eclipse.github.io/kura/doc/kura-setup.html)
@@ -16,6 +16,8 @@ _not working!_
   * (kura)[https://www.eclipse.org/downloads/download.php?file=/kura/releases/2.1.0/user_workspace_archive_2.1.0.zip]
 4. open target definition, click the link Set as Target Platform
 5. clone repo in WS
+6. right click on src/main/dp/serialthing.dpp, quick build
+7. deploy bin/serialthing.dp to kura
 
 ## debug osgi using mtoolkit
 

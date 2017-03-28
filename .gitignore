@@ -1,6 +1,7 @@
 .metadata
 bin/
 tmp/
+*.class
 *.tmp
 *.bak
 *.swp
@@ -8,7 +9,6 @@ tmp/
 *.class
 *.dp
 local.properties
-.settings/*
 .loadpath
 .recommenders
 

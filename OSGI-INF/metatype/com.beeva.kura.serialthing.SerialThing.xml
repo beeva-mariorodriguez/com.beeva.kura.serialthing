@@ -4,7 +4,7 @@
          name="SerialThing"
          description="SerialThing configuration.">
 
-        <Icon resource="OSGI-INF/beeva.png" size="32"/>
+        <Icon resource="resources/beeva.png" size="32"/>
 
         <AD id="serial.device"  
             name="serial.device"

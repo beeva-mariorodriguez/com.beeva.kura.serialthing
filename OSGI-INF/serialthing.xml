@@ -5,8 +5,6 @@
 	configuration-policy="require">
 	<implementation class="com.beeva.kura.serialthing.SerialThing" />
 
-	<!-- If the component is configurable through the ESF ConfigurationService, 
-		it must expose a Service. -->
 	<property name="service.pid" type="String"
 		value="com.beeva.kura.serialthing.SerialThing" />
 	<service>
