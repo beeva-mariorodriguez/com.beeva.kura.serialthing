@@ -135,7 +135,6 @@ public class SerialThing implements ConfigurableComponent {
             return;
         }
         int baudRate = Integer.valueOf((String) m_properties.get(SERIAL_BAUDRATE_PROP_NAME));
-
         int dataBits = Integer.valueOf((String) m_properties.get(SERIAL_DATA_BITS_PROP_NAME));
         int stopBits = Integer.valueOf((String) m_properties.get(SERIAL_STOP_BITS_PROP_NAME));
 
@@ -152,7 +151,6 @@ public class SerialThing implements ConfigurableComponent {
 
         String uri = new CommURI.Builder(port).withBaudRate(baudRate).withDataBits(dataBits).withStopBits(stopBits)
                 .withParity(parity).withTimeout(1000).build().toString();
-
         try {
             m_commConnection = (CommConnection) m_connectionFactory.createConnection(uri, 1, false);
             m_commIs = m_commConnection.openInputStream();

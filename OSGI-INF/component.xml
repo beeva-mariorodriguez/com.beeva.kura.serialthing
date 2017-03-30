@@ -10,9 +10,7 @@
 	<service>
 		<provide interface="com.beeva.kura.serialthing.SerialThing" />
 	</service>
+ <reference bind="setConnectionFactory" cardinality="1..1" interface="org.osgi.service.io.ConnectionFactory" name="ConnectionFactory" policy="static" unbind="unsetConnectionFactory"/>
 
-	<reference bind="setConnectionFactory" cardinality="1..1"
-		interface="org.osgi.service.io.ConnectionFactory" name="ConnectionFactory"
-		policy="static" unbind="unsetConnectionFactory" />
 
 </scr:component>
