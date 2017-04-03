@@ -60,6 +60,17 @@
            <Option label="1" value="1"/>
            <Option label="2" value="2"/>
         </AD>
+        <AD id="serial.flowcontrol"  
+            name="serial.flowcontrol"
+            type="String"
+            cardinality="0"
+            required="true"
+            default="none"
+            description="Flow Control.">
+           <Option label="none" value="none"/>  
+           <Option label="rtscts" value="rtscts"/>
+           <Option label="xonxoff" value="xonxoff"/>
+        </AD>
     </OCD>
     <Designate pid="com.beeva.kura.serialthing.SerialThing">
         <Object ocdref="com.beeva.kura.serialthing.SerialThing"/>
