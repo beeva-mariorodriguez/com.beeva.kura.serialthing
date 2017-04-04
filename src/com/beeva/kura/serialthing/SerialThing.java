@@ -8,6 +8,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.kura.comm.CommConnection;
 import org.eclipse.kura.comm.CommURI;
@@ -28,6 +30,9 @@ public class SerialThing implements ConfigurableComponent {
 	private static final String SERIAL_PARITY_PROP_NAME = "serial.parity";
 	private static final String SERIAL_STOP_BITS_PROP_NAME = "serial.stop-bits";
 	private static final String SERIAL_FLOWCONTROL_PROP_NAME = "serial.flowcontrol";
+
+	private int temperature;
+	private int humidity;
 
 	private ConnectionFactory m_connectionFactory;
 	private CommConnection m_commConnection;
@@ -224,16 +229,12 @@ public class SerialThing implements ConfigurableComponent {
 							return;
 						}
 					}
-					// on reception of CR, publish the received sentence
+
 					if (c == 13) {
 						s_logger.debug(APP_ID + "serial input: " + sb.toString());
-						sb.append("\n");
-						String dataRead = sb.toString();
-
-						// echo the data to the output stream
-						m_commOs.write(dataRead.getBytes());
-
-						// reset the buffer
+						if (parseSerial(sb.toString())) {
+							// MQTT
+						}
 						sb = new StringBuilder();
 					} else if (c != 10) {
 						sb.append((char) c);
@@ -248,6 +249,21 @@ public class SerialThing implements ConfigurableComponent {
 					s_logger.error(APP_ID + "Cannot close buffered reader", e);
 				}
 			}
+		}
+	}
+
+	private boolean parseSerial(String buf) {
+		// [DHT11] Temperature: 27C / Humidity: 14%
+		// \[[A-Z0-9]+\]\s+Temperature:\s+[\d]+C\s+\/\s+Humidity:\s+[\d]+%
+		String regex = "\\[[A-Z0-9]+\\]\\s+Temperature:\\s+(\\d+)C\\s+\\/\\s+Humidity:\\s+(\\d+)%";
+		Pattern r = Pattern.compile(regex);
+		Matcher m = r.matcher(buf);
+		if (m.find()) {
+			temperature = Integer.parseInt(m.group(1));
+			humidity = Integer.parseInt(m.group(2));
+			return true;
+		} else {
+			return false;
 		}
 	}
 }
