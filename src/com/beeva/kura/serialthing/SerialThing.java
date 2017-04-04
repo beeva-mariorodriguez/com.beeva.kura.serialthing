@@ -4,22 +4,31 @@ package com.beeva.kura.serialthing;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.kura.cloud.CloudClient;
+import org.eclipse.kura.cloud.CloudClientListener;
+import org.eclipse.kura.cloud.CloudService;
 import org.eclipse.kura.comm.CommConnection;
 import org.eclipse.kura.comm.CommURI;
 import org.eclipse.kura.configuration.ConfigurableComponent;
+import org.eclipse.kura.message.KuraPayload;
 import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.ComponentException;
 import org.osgi.service.io.ConnectionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SerialThing implements ConfigurableComponent {
+public class SerialThing implements ConfigurableComponent, CloudClientListener {
 
 	private static final Logger s_logger = LoggerFactory.getLogger(SerialThing.class);
 	private static final String APP_ID = "com.beeva.kura.serialthing.SerialThing";
@@ -30,6 +39,10 @@ public class SerialThing implements ConfigurableComponent {
 	private static final String SERIAL_PARITY_PROP_NAME = "serial.parity";
 	private static final String SERIAL_STOP_BITS_PROP_NAME = "serial.stop-bits";
 	private static final String SERIAL_FLOWCONTROL_PROP_NAME = "serial.flowcontrol";
+	private static final String PUBLISH_RATE_PROP_NAME = "publish.rate";
+	private static final String PUBLISH_TOPIC_PROP_NAME = "publish.semanticTopic";
+	private static final String PUBLISH_QOS_PROP_NAME = "publish.qos";
+	private static final String PUBLISH_RETAIN_PROP_NAME = "publish.retain";
 
 	private int temperature;
 	private int humidity;
@@ -39,8 +52,14 @@ public class SerialThing implements ConfigurableComponent {
 	private InputStream m_commIs;
 	private OutputStream m_commOs;
 
-	private ScheduledThreadPoolExecutor m_worker;
-	private Future<?> m_handle;
+	private ScheduledThreadPoolExecutor m_serial_worker;
+	private Future<?> m_serial_handle;
+
+	private ScheduledExecutorService m_mqtt_worker;
+	private Future<?> m_mqtt_handle;
+
+	private CloudService m_cloudService;
+	private CloudClient m_cloudClient;
 
 	private Map<String, Object> m_properties;
 
@@ -49,6 +68,13 @@ public class SerialThing implements ConfigurableComponent {
 	// Dependencies
 	//
 	// ----------------------------------------------------------------
+	public void setCloudService(CloudService cloudService) {
+		this.m_cloudService = cloudService;
+	}
+
+	public void unsetCloudService(CloudService cloudService) {
+		this.m_cloudService = null;
+	}
 
 	public void setConnectionFactory(ConnectionFactory connectionFactory) {
 		this.m_connectionFactory = connectionFactory;
@@ -66,29 +92,68 @@ public class SerialThing implements ConfigurableComponent {
 
 	protected void activate(ComponentContext componentContext, Map<String, Object> properties) {
 		s_logger.info("Activating " + APP_ID);
-		m_worker = new ScheduledThreadPoolExecutor(1);
-		m_properties = new HashMap<String, Object>();
+		this.m_mqtt_worker = Executors.newSingleThreadScheduledExecutor();
+		this.m_serial_worker = new ScheduledThreadPoolExecutor(1);
+		this.m_properties = new HashMap<String, Object>();
 		doUpdate(properties);
+		try {
+			// Acquire a Cloud Application Client for this Application
+			s_logger.info(APP_ID + " Getting CloudClient");
+			this.m_cloudClient = this.m_cloudService.newCloudClient(APP_ID);
+			this.m_cloudClient.addCloudClientListener(this);
+		} catch (Exception e) {
+			s_logger.error(APP_ID + " Error during component activation: ", e);
+			throw new ComponentException(e);
+		}
 		s_logger.info("Activating " + APP_ID + "Done.");
 	}
 
 	protected void deactivate(ComponentContext componentContext) {
 		s_logger.info("Deactivating " + APP_ID);
-
 		// shutting down the worker and cleaning up the properties
-		m_handle.cancel(true);
-		m_worker.shutdownNow();
-
+		m_serial_handle.cancel(true);
+		m_serial_worker.shutdownNow();
+		m_mqtt_handle.cancel(true);
+		m_mqtt_worker.shutdownNow();
 		// close the serial port
 		closePort();
 		s_logger.info("Deactivating  " + APP_ID + "Done.");
-
 	}
 
 	public void updated(Map<String, Object> properties) {
 		s_logger.info("Updating " + APP_ID);
 		doUpdate(properties);
 		s_logger.info("Updating " + APP_ID);
+	}
+
+	// ----------------------------------------------------------------
+	//
+	// Cloud Application Callback Methods
+	//
+	// ----------------------------------------------------------------
+
+	@Override
+	public void onControlMessageArrived(String deviceId, String appTopic, KuraPayload msg, int qos, boolean retain) {
+	}
+
+	@Override
+	public void onMessageArrived(String deviceId, String appTopic, KuraPayload msg, int qos, boolean retain) {
+	}
+
+	@Override
+	public void onConnectionLost() {
+	}
+
+	@Override
+	public void onConnectionEstablished() {
+	}
+
+	@Override
+	public void onMessageConfirmed(int messageId, String appTopic) {
+	}
+
+	@Override
+	public void onMessagePublished(int messageId, String appTopic) {
 	}
 
 	// ----------------------------------------------------------------
@@ -105,30 +170,35 @@ public class SerialThing implements ConfigurableComponent {
 			for (String s : properties.keySet()) {
 				s_logger.info("Update - " + s + ": " + properties.get(s));
 			}
-
-			// cancel a current worker handle if one if active
-			if (m_handle != null) {
-				m_handle.cancel(true);
+			// cancel current workers if active
+			if (m_serial_handle != null) {
+				m_serial_handle.cancel(true);
 			}
-
+			if (m_mqtt_handle != null) {
+				m_mqtt_handle.cancel(true);
+			}
 			// close the serial port so it can be reconfigured
 			closePort();
-
 			// store the properties
 			m_properties.clear();
 			m_properties.putAll(properties);
-
 			// reopen the port with the new configuration
 			openPort();
-
-			// start the worker thread
-			m_handle = m_worker.submit(new Runnable() {
-
+			// start the workers thread
+			m_serial_handle = m_serial_worker.submit(new Runnable() {
 				@Override
 				public void run() {
 					doSerial();
 				}
 			});
+			int pubrate = (Integer) this.m_properties.get(PUBLISH_RATE_PROP_NAME);
+			this.m_mqtt_handle = this.m_mqtt_worker.scheduleAtFixedRate(new Runnable() {
+				@Override
+				public void run() {
+					Thread.currentThread().setName(getClass().getSimpleName());
+					doPublish();
+				}
+			}, 0, pubrate, TimeUnit.SECONDS);
 		} catch (Throwable t) {
 			s_logger.error("Unexpected Throwable", t);
 		}
@@ -266,4 +336,25 @@ public class SerialThing implements ConfigurableComponent {
 			return false;
 		}
 	}
+
+	private void doPublish() {
+		// fetch the publishing configuration from the publishing properties
+		String topic = (String) this.m_properties.get(PUBLISH_TOPIC_PROP_NAME);
+		Integer qos = (Integer) this.m_properties.get(PUBLISH_QOS_PROP_NAME);
+		Boolean retain = (Boolean) this.m_properties.get(PUBLISH_RETAIN_PROP_NAME);
+		// Allocate a new payload
+		KuraPayload payload = new KuraPayload();
+		// Timestamp the message
+		payload.setTimestamp(new Date());
+		// Add the temperature as a metric to the payload
+		payload.addMetric("temperature", this.temperature);
+		payload.addMetric("Humidity", this.humidity);
+		// Publish the message
+		try {
+			this.m_cloudClient.publish(topic, payload, qos, retain);
+		} catch (Exception e) {
+			s_logger.error(APP_ID + "Cannot publish topic: " + topic, e);
+		}
+	}
+
 }

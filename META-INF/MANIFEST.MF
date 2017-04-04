@@ -9,8 +9,10 @@ Service-Component: OSGI-INF/*.xml
 Bundle-ActivationPolicy: lazy
 Import-Package: javax.comm;version="1.2.0",
  javax.microedition.io;resolution:=optional,
+ org.eclipse.kura.cloud;version="1.0.1",
  org.eclipse.kura.comm;version="1.0.1",
  org.eclipse.kura.configuration;version="1.1.1",
+ org.eclipse.kura.message;version="1.1.0",
  org.osgi.service.component;version="1.2.0",
  org.osgi.service.io;version="1.0.0",
  org.slf4j;version="1.7.21"

@@ -1,16 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <scr:component xmlns:scr="http://www.osgi.org/xmlns/scr/v1.1.0"
-	name="com.beeva.kura.serialthing.SerialThing" activate="activate"
-	deactivate="deactivate" modified="updated" enabled="true" immediate="true"
-	configuration-policy="require">
-	<implementation class="com.beeva.kura.serialthing.SerialThing" />
+    name="com.beeva.kura.serialthing.SerialThing" activate="activate"
+    deactivate="deactivate" modified="updated" enabled="true" immediate="true"
+    configuration-policy="require">
+    <implementation class="com.beeva.kura.serialthing.SerialThing" />
 
-	<property name="service.pid" type="String"
-		value="com.beeva.kura.serialthing.SerialThing" />
-	<service>
-		<provide interface="com.beeva.kura.serialthing.SerialThing" />
-	</service>
- <reference bind="setConnectionFactory" cardinality="1..1" interface="org.osgi.service.io.ConnectionFactory" name="ConnectionFactory" policy="static" unbind="unsetConnectionFactory"/>
+    <property name="service.pid" type="String"
+        value="com.beeva.kura.serialthing.SerialThing" />
+    <service>
+        <provide interface="com.beeva.kura.serialthing.SerialThing" />
+    </service>
+    <reference bind="setConnectionFactory" cardinality="1..1" interface="org.osgi.service.io.ConnectionFactory" name="ConnectionFactory" policy="static" unbind="unsetConnectionFactory"/>
 
-
+    <reference name="CloudService"
+        policy="static"
+        bind="setCloudService"
+        unbind="unsetCloudService"
+        cardinality="1..1"
+        interface="org.eclipse.kura.cloud.CloudService"/>
 </scr:component>
