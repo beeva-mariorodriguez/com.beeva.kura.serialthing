@@ -1,6 +1,11 @@
 # kura serial example
 
-serial port example code from [Eclipse Kura Serial Example](https://eclipse.github.io/kura/doc/serial-example.html|https://eclipse.github.io/kura/doc/serial-example.html)
+serial port with MQTT/Cloud integration example for eclipse kura
+
+code from: 
+  * [Eclipse Kura Serial Example](https://eclipse.github.io/kura/doc/serial-example.html)
+  * [Eclipse Kura Heater Demo](https://github.com/eclipse/kura/tree/develop/kura/examples/org.eclipse.kura.demo.heater)
+
 
 ## instructions
 

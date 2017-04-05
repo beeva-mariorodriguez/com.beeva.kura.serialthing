@@ -48,9 +48,9 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 	private Integer humidity;
 
 	private ConnectionFactory m_connectionFactory;
-	private CommConnection m_commConnection;
-	private InputStream m_commIs;
-	private OutputStream m_commOs;
+	private CommConnection m_commConnection;    // serial connection, created in openPort() 
+	private InputStream m_commIs;               // serial connection input stream
+	private OutputStream m_commOs;              // serial connection output stream
 
 	private ScheduledThreadPoolExecutor m_serial_worker;
 	private Future<?> m_serial_handle;
@@ -65,7 +65,7 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 
 	// ----------------------------------------------------------------
 	//
-	// Dependencies
+	// Dependencies => OSGI-INF/component.xml
 	//
 	// ----------------------------------------------------------------
 
@@ -87,44 +87,47 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 
 	// ----------------------------------------------------------------
 	//
-	// Activation APIs
+	// Activation APIs => OSGI-INF/component.xml
 	//
 	// ----------------------------------------------------------------
 
 	protected void activate(ComponentContext componentContext, Map<String, Object> properties) {
-		s_logger.info("Activating " + APP_ID);
-		this.m_mqtt_worker = Executors.newSingleThreadScheduledExecutor();
-		this.m_serial_worker = new ScheduledThreadPoolExecutor(1);
+		s_logger.info("{} Activating", APP_ID);		
 		this.m_properties = new HashMap<String, Object>();
-		doUpdate(properties);
 		try {
 			// Acquire a Cloud Application Client for this Application
-			s_logger.info(APP_ID + " Getting CloudClient");
+			s_logger.info("{} Getting CloudClient, APP_ID");
 			this.m_cloudClient = this.m_cloudService.newCloudClient(APP_ID);
 			this.m_cloudClient.addCloudClientListener(this);
 		} catch (Exception e) {
 			s_logger.error(APP_ID + " Error during component activation: ", e);
 			throw new ComponentException(e);
 		}
-		s_logger.info("Activating " + APP_ID + "Done.");
+		// create empty scheduled executor for MQTT (cloud client)
+		this.m_mqtt_worker = Executors.newSingleThreadScheduledExecutor();
+		// create empty thread pool executor for serial port communication
+		this.m_serial_worker = new ScheduledThreadPoolExecutor(1);
+		
+		doUpdate(properties);
+		s_logger.info("{} Active!", APP_ID);
 	}
 
 	protected void deactivate(ComponentContext componentContext) {
-		s_logger.info("Deactivating " + APP_ID);
-		// shutting down the worker and cleaning up the properties
+		s_logger.info("{} Deactivating", APP_ID);
+		// shutting down the workers and cleaning up the properties
 		m_serial_handle.cancel(true);
 		m_serial_worker.shutdownNow();
 		m_mqtt_handle.cancel(true);
 		m_mqtt_worker.shutdownNow();
 		// close the serial port
 		closePort();
-		s_logger.info("Deactivating  " + APP_ID + "Done.");
+		s_logger.info("{} Deactivated", APP_ID);
 	}
 
 	public void updated(Map<String, Object> properties) {
-		s_logger.info("Updating " + APP_ID);
+		s_logger.info("{} Updating", APP_ID);
 		doUpdate(properties);
-		s_logger.info("Updating " + APP_ID);
+		s_logger.info("{} Updated", APP_ID);
 	}
 
 	// ----------------------------------------------------------------
@@ -163,14 +166,12 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 	//
 	// ----------------------------------------------------------------
 
-	/**
-	 * Called after a new set of properties has been configured on the service
+	/*
+	 * Called by updated() after a new set of properties has been configured on
+	 * the service
 	 */
 	private void doUpdate(Map<String, Object> properties) {
 		try {
-			for (String s : properties.keySet()) {
-				s_logger.info("Update - " + s + ": " + properties.get(s));
-			}
 			// cancel current workers if active
 			if (m_serial_handle != null) {
 				m_serial_handle.cancel(true);
@@ -185,13 +186,14 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 			m_properties.putAll(properties);
 			// reopen the port with the new configuration
 			openPort();
-			// start the workers thread
+			// start the serial worker thread
 			m_serial_handle = m_serial_worker.submit(new Runnable() {
 				@Override
 				public void run() {
 					doSerial();
 				}
 			});
+			// start the mqtt worker thread, will run each /publish.rate/ seconds 
 			int pubrate = (Integer) this.m_properties.get(PUBLISH_RATE_PROP_NAME);
 			this.m_mqtt_handle = this.m_mqtt_worker.scheduleAtFixedRate(new Runnable() {
 				@Override
@@ -201,30 +203,29 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 				}
 			}, 0, pubrate, TimeUnit.SECONDS);
 		} catch (Throwable t) {
-			s_logger.error("Unexpected Throwable", t);
+			s_logger.error(APP_ID + "Unexpected Throwable", t);
 		}
 	}
 
+	/*
+	 * open serial port
+	 */
 	private void openPort() {
 		String port = (String) m_properties.get(SERIAL_DEVICE_PROP_NAME);
-
 		if (port == null) {
-			s_logger.info("Port name not configured");
+			s_logger.info("{} Port name not configured", APP_ID);
 			return;
 		}
 		int baudRate = Integer.valueOf((String) m_properties.get(SERIAL_BAUDRATE_PROP_NAME));
 		int dataBits = Integer.valueOf((String) m_properties.get(SERIAL_DATA_BITS_PROP_NAME));
 		int stopBits = Integer.valueOf((String) m_properties.get(SERIAL_STOP_BITS_PROP_NAME));
-
 		String sParity = (String) m_properties.get(SERIAL_PARITY_PROP_NAME);
-
 		int parity = CommURI.PARITY_NONE;
 		if (sParity.equals("odd")) {
 			parity = CommURI.PARITY_ODD;
 		} else if (sParity.equals("even")) {
 			parity = CommURI.PARITY_EVEN;
 		}
-
 		String sFlowcontrol = (String) m_properties.get(SERIAL_FLOWCONTROL_PROP_NAME);
 		int flowcontrol = CommURI.FLOWCONTROL_NONE;
 		if (sFlowcontrol.equals("rtscts")) {
@@ -233,47 +234,58 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 			flowcontrol = CommURI.FLOWCONTROL_XONXOFF_IN + CommURI.FLOWCONTROL_XONXOFF_OUT;
 		}
 
-		String uri = new CommURI.Builder(port).withBaudRate(baudRate).withDataBits(dataBits).withStopBits(stopBits)
-				.withParity(parity).withTimeout(1000).withFlowControl(flowcontrol).build().toString();
+		String uri = new CommURI.Builder(port).withBaudRate(baudRate)
+                                              .withDataBits(dataBits)
+                                              .withStopBits(stopBits)
+                                              .withParity(parity)
+                                              .withTimeout(1000)
+                                              .withFlowControl(flowcontrol)
+                                              .build()
+                                              .toString();
+		
 		try {
 			m_commConnection = (CommConnection) m_connectionFactory.createConnection(uri, 1, false);
 			m_commIs = m_commConnection.openInputStream();
 			m_commOs = m_commConnection.openOutputStream();
-			s_logger.info(port + " open");
+			s_logger.info("{} port {} open", APP_ID, port);
+			
 		} catch (IOException e) {
-			s_logger.error("Failed to open port " + port, e);
+			s_logger.error(APP_ID + " Failed to open port " + port, e);
 			cleanupPort();
 		}
 	}
 
+	/*
+	 * close input/output streams and connection to serial port
+	 */
 	private void cleanupPort() {
 		if (m_commIs != null) {
 			try {
-				s_logger.info("Closing port input stream...");
+				s_logger.info("{} Closing port input stream...", APP_ID);
 				m_commIs.close();
-				s_logger.info("Closed port input stream");
+				s_logger.info("{} Closed port input stream", APP_ID);
 			} catch (IOException e) {
-				s_logger.error("Cannot close port input stream", e);
+				s_logger.error(APP_ID + " Cannot close port input stream", e);
 			}
 			m_commIs = null;
 		}
 		if (m_commOs != null) {
 			try {
-				s_logger.info("Closing port output stream...");
+				s_logger.info("{} Closing port output stream...", APP_ID);
 				m_commOs.close();
-				s_logger.info("Closed port output stream");
+				s_logger.info("{} Closed port output stream", APP_ID);
 			} catch (IOException e) {
-				s_logger.error("Cannot close port output stream", e);
+				s_logger.error(APP_ID + " Cannot close port output stream", e);
 			}
 			m_commOs = null;
 		}
 		if (m_commConnection != null) {
 			try {
-				s_logger.info("Closing port...");
+				s_logger.info("{} Closing port...", APP_ID);
 				m_commConnection.close();
-				s_logger.info("Closed port");
+				s_logger.info("{} Closed port", APP_ID);
 			} catch (IOException e) {
-				s_logger.error("Cannot close port", e);
+				s_logger.error(APP_ID + " Cannot close port", e);
 			}
 			m_commConnection = null;
 		}
@@ -283,17 +295,24 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 		cleanupPort();
 	}
 
+	/*
+	 * poll the serial port read each character and add it to a String
+	 * 
+	 * after reading a CR, send the current String to parseSerial() and start again
+	 *   
+	 */
 	private void doSerial() {
 		if (m_commIs != null) {
 			try {
 				int c = -1;
 				StringBuilder sb = new StringBuilder();
+				// while the input stream is open
 				while (m_commIs != null) {
+					// read current character, sleep 5s if none is available
 					if (m_commIs.available() != 0) {
 						c = m_commIs.read();
 					} else {
 						try {
-							Thread.sleep(100);
 							s_logger.debug("{} no serial input ... sleeping", APP_ID);
 							Thread.sleep(5000);
 							continue;
@@ -301,15 +320,16 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 							return;
 						}
 					}
-
+                    // if CR => build and send string to parseSerial() 
 					if (c == 13) {
 						s_logger.debug("{} serial input: {}", APP_ID, sb);
-						if (parseSerial(sb.toString())) {
-							s_logger.debug("{} updated serialthing data: {}C {}%", APP_ID, this.temperature.toString(),
+						if (parseSerial(sb.toString())) {   // if true, we have a match! log it
+							s_logger.debug("{} updated serialthing data: {}C {}%", APP_ID, 
+									this.temperature.toString(),
 									this.humidity.toString());
-
 						}
 						sb = new StringBuilder();
+					// else, just read the character and add it to the buffer
 					} else if (c != 10) {
 						sb.append((char) c);
 					}
@@ -328,21 +348,35 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 
 	private boolean parseSerial(String buf) {
 		// [DHT11] Temperature: 27C / Humidity: 14%
+		// ugly regex
 		String regex = "\\[[A-Z0-9]+\\]\\s+Temperature:\\s+(\\d+).+C\\s+\\/\\s+Humidity:\\s+(\\d+)%";
 		Pattern r = Pattern.compile(regex);
 		Matcher m = r.matcher(buf);
 		if (m.find()) {
+			// if the string matches, log, parse and return true
 			s_logger.debug("{} match: {} ", APP_ID, buf);
 			temperature = Integer.parseInt(m.group(1));
 			humidity = Integer.parseInt(m.group(2));
 			return true;
 		} else {
+			// else, just log
 			s_logger.debug("{} no match: {} ", APP_ID, buf);
 			return false;
 		}
 	}
 
+	/*
+	 * publish temperature and humidity to MQTT
+	 * 
+	 * if metrics are both null (no metrics read from serial port) does nothing
+	 * 
+	 * runs each /publish.rate/
+	 */
 	private void doPublish() {
+		if (humidity == null && temperature == null) {
+			// nothing to publish!
+			return;
+		}
 		// fetch the publishing configuration from the publishing properties
 		String topic = (String) this.m_properties.get(PUBLISH_TOPIC_PROP_NAME);
 		Integer qos = (Integer) this.m_properties.get(PUBLISH_QOS_PROP_NAME);
