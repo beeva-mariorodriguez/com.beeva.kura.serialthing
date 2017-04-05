@@ -44,8 +44,8 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 	private static final String PUBLISH_QOS_PROP_NAME = "publish.qos";
 	private static final String PUBLISH_RETAIN_PROP_NAME = "publish.retain";
 
-	private int temperature;
-	private int humidity;
+	private Integer temperature;
+	private Integer humidity;
 
 	private ConnectionFactory m_connectionFactory;
 	private CommConnection m_commConnection;
@@ -68,6 +68,7 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 	// Dependencies
 	//
 	// ----------------------------------------------------------------
+
 	public void setCloudService(CloudService cloudService) {
 		this.m_cloudService = cloudService;
 	}
@@ -293,7 +294,8 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 					} else {
 						try {
 							Thread.sleep(100);
-							s_logger.debug(APP_ID + "no serial input ... sleeping");
+							s_logger.debug("{} no serial input ... sleeping", APP_ID);
+							Thread.sleep(5000);
 							continue;
 						} catch (InterruptedException e) {
 							return;
@@ -301,9 +303,11 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 					}
 
 					if (c == 13) {
-						s_logger.debug(APP_ID + "serial input: " + sb.toString());
+						s_logger.debug("{} serial input: {}", APP_ID, sb);
 						if (parseSerial(sb.toString())) {
-							// MQTT
+							s_logger.debug("{} updated serialthing data: {}C {}%", APP_ID, this.temperature.toString(),
+									this.humidity.toString());
+
 						}
 						sb = new StringBuilder();
 					} else if (c != 10) {
@@ -316,7 +320,7 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 				try {
 					m_commIs.close();
 				} catch (IOException e) {
-					s_logger.error(APP_ID + "Cannot close buffered reader", e);
+					s_logger.error(APP_ID + "{} Cannot close buffered reader", e);
 				}
 			}
 		}
@@ -324,15 +328,16 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 
 	private boolean parseSerial(String buf) {
 		// [DHT11] Temperature: 27C / Humidity: 14%
-		// \[[A-Z0-9]+\]\s+Temperature:\s+[\d]+C\s+\/\s+Humidity:\s+[\d]+%
-		String regex = "\\[[A-Z0-9]+\\]\\s+Temperature:\\s+(\\d+)C\\s+\\/\\s+Humidity:\\s+(\\d+)%";
+		String regex = "\\[[A-Z0-9]+\\]\\s+Temperature:\\s+(\\d+).+C\\s+\\/\\s+Humidity:\\s+(\\d+)%";
 		Pattern r = Pattern.compile(regex);
 		Matcher m = r.matcher(buf);
 		if (m.find()) {
+			s_logger.debug("{} match: {} ", APP_ID, buf);
 			temperature = Integer.parseInt(m.group(1));
 			humidity = Integer.parseInt(m.group(2));
 			return true;
 		} else {
+			s_logger.debug("{} no match: {} ", APP_ID, buf);
 			return false;
 		}
 	}
@@ -346,14 +351,18 @@ public class SerialThing implements ConfigurableComponent, CloudClientListener {
 		KuraPayload payload = new KuraPayload();
 		// Timestamp the message
 		payload.setTimestamp(new Date());
-		// Add the temperature as a metric to the payload
-		payload.addMetric("temperature", this.temperature);
-		payload.addMetric("Humidity", this.humidity);
+		// Add the metrics to the payload if not null
+		if (temperature != null) {
+			payload.addMetric("temperature", this.temperature);
+		}
+		if (humidity != null) {
+			payload.addMetric("Humidity", this.humidity);
+		}
 		// Publish the message
 		try {
 			this.m_cloudClient.publish(topic, payload, qos, retain);
 		} catch (Exception e) {
-			s_logger.error(APP_ID + "Cannot publish topic: " + topic, e);
+			s_logger.error(APP_ID + " Cannot publish topic: " + topic, e);
 		}
 	}
 
