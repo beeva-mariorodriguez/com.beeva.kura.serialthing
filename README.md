@@ -27,4 +27,8 @@ in eclipse: window/show view/other, scroll to mtoolkit and chose Frameworks
 
 add framework address: ``kura_device_IP`` port:``1450`` (TIP: use a ssh tunnel!)
 
+## not working
+
+* unable to build .dp file: problems with dependencies (javax.microedition.io)
+* unable to build plugin if using ESF development environment: same problems as with .dp file
 
